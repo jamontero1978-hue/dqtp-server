@@ -4,7 +4,7 @@ const WebSocket = require("ws");
 const PORT = process.env.PORT || 10000;
 
 // ===============================
-// 🌐 Servidor HTTP (Render)
+// 🌐 Servidor HTTP
 // ===============================
 const server = http.createServer((req, res) => {
   res.writeHead(200);
@@ -17,7 +17,7 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocket.Server({ server });
 
 // ===============================
-// 📦 Salas con estado AUTORITATIVO
+// 📦 Salas
 // ===============================
 const rooms = {};
 
@@ -40,7 +40,7 @@ wss.on("connection", (ws) => {
     if (!room || !type) return;
 
     // ===============================
-    // 🏗️ Crear sala
+    // 🏗️ Crear sala si no existe
     // ===============================
     if (!rooms[room]) {
       rooms[room] = {
@@ -52,7 +52,6 @@ wss.on("connection", (ws) => {
             1: { name: null, ready: false },
             2: { name: null, ready: false }
           },
-          // ✅ ESTADO DE DRAFT (CLAVE)
           draft: {
             system: null,
             picks: []
@@ -64,7 +63,7 @@ wss.on("connection", (ws) => {
 
     const roomObj = rooms[room];
 
-    // Añadir cliente a la sala si no está
+    // Añadir cliente a la sala
     if (!roomObj.clients.includes(ws)) {
       roomObj.clients.push(ws);
     }
@@ -73,24 +72,13 @@ wss.on("connection", (ws) => {
     // 🎭 JOIN
     // ===============================
     if (type === "JOIN") {
-      const players = roomObj.clients;
-
-      if (players.length > 2) {
-        ws.send(JSON.stringify({
-          type: "ERROR",
-          message: "La sala está llena"
-        }));
-        return;
-      }
-
-      const capNum = players.length === 1 ? 1 : 2;
+      const capNum = roomObj.clients.length === 1 ? 1 : 2;
 
       ws.send(JSON.stringify({
         type: "ROLE_ASSIGNED",
         capNum
       }));
 
-      // ✅ SINCRONIZACIÓN COMPLETA
       ws.send(JSON.stringify({
         type: "SYNC_STATE",
         phase: roomObj.state.phase,
@@ -103,7 +91,7 @@ wss.on("connection", (ws) => {
     }
 
     // ===============================
-    // ⚽ SET_GOALS
+    // ⚽ SET GOALS
     // ===============================
     if (type === "SET_GOALS") {
       roomObj.state.goalsLimit = data.value;
@@ -112,60 +100,56 @@ wss.on("connection", (ws) => {
     }
 
     // ===============================
-    // 👤 SET_CAPTAIN_NAME
+    // 👤 SET CAPTAIN NAME
     // ===============================
     if (type === "SET_CAPTAIN_NAME") {
       const cap = data.capNum;
-
       roomObj.state.captains[cap].name = data.name;
       roomObj.state.captains[cap].ready = true;
 
-      const c1Ready = roomObj.state.captains[1].ready;
-      const c2Ready = roomObj.state.captains[2].ready;
-
-      if (c1Ready && c2Ready) {
+      if (roomObj.state.captains[1].ready &&
+          roomObj.state.captains[2].ready) {
         roomObj.state.phase = "TEAMS";
         console.log(`✅ Ambos capitanes listos en sala ${room}`);
       }
     }
 
     // ===============================
-    // 🧩 SET_DRAFT_SYSTEM
+    // 🧩 SET DRAFT SYSTEM
     // ===============================
     if (type === "SET_DRAFT_SYSTEM") {
       roomObj.state.phase = "DRAFT";
       roomObj.state.draft.system = data.system;
       roomObj.state.draft.picks = [];
-      console.log(`🧩 Draft iniciado en sala ${room} con sistema ${data.system}`);
+      console.log(`🧩 Draft iniciado en sala ${room} (${data.system})`);
     }
 
     // ===============================
-    // 🎯 DRAFT_PICK (ARREGLO CLAVE)
+    // 🎯 DRAFT PICK (ARBITRO)
     // ===============================
     if (type === "DRAFT_PICK") {
-      const { playerId, targetTeamNum } = data;
+      const { playerId } = data;
 
-      // ❌ Evitar picks duplicados
+      // ❌ No permitir duplicados
       if (roomObj.state.draft.picks.some(p => p.playerId === playerId)) {
-        console.warn(`⛔ Pick duplicado ignorado en sala ${room}: ${playerId}`);
+        console.warn(`⛔ Pick duplicado ignorado: ${playerId}`);
         return;
       }
 
-      // ✅ Registrar pick como OFICIAL
       roomObj.state.draft.picks.push({
         playerId,
-        targetTeamNum
+        targetTeamNum: data.targetTeamNum
       });
 
-      console.log(`✅ Draft pick aceptado en sala ${room}: ${playerId}`);
-      console.log(`📊 Total picks: ${roomObj.state.draft.picks.length}`);
+      console.log(`✅ Draft pick aceptado: ${playerId}`);
     }
 
     // ===============================
-    // 🔁 Reenviar a TODOS
+    // 🔁 REENVÍO CONTROLADO (CLAVE)
     // ===============================
-    roomObj.clients.forEach((client) => {
-      if (client.readyState === WebSocket.OPEN) {
+    roomObj.clients.forEach(client => {
+      // 🔥 CLAVE: no reenviar al emisor
+      if (client !== ws && client.readyState === WebSocket.OPEN) {
         client.send(JSON.stringify(data));
       }
     });
@@ -181,7 +165,6 @@ wss.on("connection", (ws) => {
         roomObj.clients.splice(idx, 1);
         console.log(`❌ Cliente desconectado de sala ${roomId}`);
       }
-
       if (roomObj.clients.length === 0) {
         delete rooms[roomId];
         console.log(`🧹 Sala eliminada: ${roomId}`);

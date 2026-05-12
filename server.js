@@ -4,7 +4,7 @@ const WebSocket = require("ws");
 const PORT = process.env.PORT || 10000;
 
 // ===============================
-// 🌐 Servidor HTTP (Render lo necesita)
+// 🌐 Servidor HTTP (Render)
 // ===============================
 const server = http.createServer((req, res) => {
   res.writeHead(200);
@@ -12,26 +12,17 @@ const server = http.createServer((req, res) => {
 });
 
 // ===============================
-// 🔌 WebSocket sobre HTTP
+// 🔌 WebSocket
 // ===============================
 const wss = new WebSocket.Server({ server });
 
 // ===============================
-// 📦 Salas de partidas con ESTADO
-// rooms = {
-//   roomId: {
-//     clients: [ws1, ws2],
-//     state: {
-//       phase: "WAITING" | "SETUP" | "CAPTAINS",
-//       goalsLimit: number | null
-//     }
-//   }
-// }
+// 📦 Salas con estado AUTORITATIVO
 // ===============================
 const rooms = {};
 
 // ===============================
-// 🤝 Conexión de cliente
+// 🤝 Conexión
 // ===============================
 wss.on("connection", (ws) => {
   console.log("✅ Cliente conectado");
@@ -49,14 +40,18 @@ wss.on("connection", (ws) => {
     if (!room || !type) return;
 
     // ===============================
-    // 🏗️ Crear sala si no existe
+    // 🏗️ Crear sala
     // ===============================
     if (!rooms[room]) {
       rooms[room] = {
         clients: [],
         state: {
           phase: "WAITING",
-          goalsLimit: null
+          goalsLimit: null,
+          captains: {
+            1: { name: null, ready: false },
+            2: { name: null, ready: false }
+          }
         }
       };
       console.log(`🆕 Sala creada: ${room}`);
@@ -64,13 +59,13 @@ wss.on("connection", (ws) => {
 
     const roomObj = rooms[room];
 
-    // Añadir socket a la sala si no está
+    // Añadir cliente a la sala si no está
     if (!roomObj.clients.includes(ws)) {
       roomObj.clients.push(ws);
     }
 
     // ===============================
-    // 🎭 JOIN → asignar rol + sincronizar estado
+    // 🎭 JOIN
     // ===============================
     if (type === "JOIN") {
       const players = roomObj.clients;
@@ -84,38 +79,55 @@ wss.on("connection", (ws) => {
       }
 
       const capNum = players.length === 1 ? 1 : 2;
-      console.log(`🎭 Capitán ${capNum} asignado en sala ${room}`);
 
       ws.send(JSON.stringify({
         type: "ROLE_ASSIGNED",
         capNum
       }));
 
-      // ✅ SINCRONIZAR ESTADO ACTUAL DE LA PARTIDA
+      // ✅ SINCRONIZACIÓN COMPLETA
       ws.send(JSON.stringify({
         type: "SYNC_STATE",
         phase: roomObj.state.phase,
-        goalsLimit: roomObj.state.goalsLimit
+        goalsLimit: roomObj.state.goalsLimit,
+        captains: roomObj.state.captains
       }));
 
-      return; // ⛔ No reenviar JOIN
+      console.log(`🎭 Capitán ${capNum} unido a sala ${room}`);
+      return;
     }
 
     // ===============================
-    // 🧠 ACTUALIZAR ESTADO DE PARTIDA
+    // ⚽ SET_GOALS
     // ===============================
     if (type === "SET_GOALS") {
-      roomObj.state.phase = "CAPTAINS";
       roomObj.state.goalsLimit = data.value;
+      roomObj.state.phase = "CAPTAINS";
       console.log(`⚽ Sala ${room} → goles = ${data.value}`);
     }
 
-    // (futuro: aquí puedes añadir TEAMS, DRAFT, GAME, etc.)
+    // ===============================
+    // 👤 SET_CAPTAIN_NAME
+    // ===============================
+    if (type === "SET_CAPTAIN_NAME") {
+      const cap = data.capNum;
+
+      roomObj.state.captains[cap].name = data.name;
+      roomObj.state.captains[cap].ready = true;
+
+      const c1Ready = roomObj.state.captains[1].ready;
+      const c2Ready = roomObj.state.captains[2].ready;
+
+      if (c1Ready && c2Ready) {
+        roomObj.state.phase = "TEAMS";
+        console.log(`✅ Ambos capitanes listos en sala ${room}`);
+      }
+    }
 
     // ===============================
-    // 🔁 REENVIAR A TODOS (INCLUYE EMISOR)
+    // 🔁 Reenviar a TODOS
     // ===============================
-    roomObj.clients.forEach(client => {
+    roomObj.clients.forEach((client) => {
       if (client.readyState === WebSocket.OPEN) {
         client.send(JSON.stringify(data));
       }
@@ -130,10 +142,9 @@ wss.on("connection", (ws) => {
       const idx = roomObj.clients.indexOf(ws);
       if (idx !== -1) {
         roomObj.clients.splice(idx, 1);
-        console.log(`❌ Desconectado de sala ${roomId}`);
+        console.log(`❌ Cliente desconectado de sala ${roomId}`);
       }
 
-      // Limpieza automática de sala vacía
       if (roomObj.clients.length === 0) {
         delete rooms[roomId];
         console.log(`🧹 Sala eliminada: ${roomId}`);
@@ -143,8 +154,8 @@ wss.on("connection", (ws) => {
 });
 
 // ===============================
-// 🚀 Arrancar servidor
+// 🚀 Arranque
 // ===============================
 server.listen(PORT, () => {
-  console.log(`🚀 Servidor DQTP activo en el puerto ${PORT}`);
+  console.log(`🚀 Servidor DQTP activo en puerto ${PORT}`);
 });

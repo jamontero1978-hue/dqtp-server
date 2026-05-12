@@ -40,7 +40,7 @@ wss.on("connection", (ws) => {
     if (!room || !type) return;
 
     // ===============================
-    // 🏗️ Crear sala si no existe
+    // 🏗️ Crear sala
     // ===============================
     if (!rooms[room]) {
       rooms[room] = {
@@ -107,8 +107,10 @@ wss.on("connection", (ws) => {
       roomObj.state.captains[cap].name = data.name;
       roomObj.state.captains[cap].ready = true;
 
-      if (roomObj.state.captains[1].ready &&
-          roomObj.state.captains[2].ready) {
+      if (
+        roomObj.state.captains[1].ready &&
+        roomObj.state.captains[2].ready
+      ) {
         roomObj.state.phase = "TEAMS";
         console.log(`✅ Ambos capitanes listos en sala ${room}`);
       }
@@ -125,12 +127,12 @@ wss.on("connection", (ws) => {
     }
 
     // ===============================
-    // 🎯 DRAFT PICK (ARBITRO)
+    // 🎯 DRAFT PICK
     // ===============================
     if (type === "DRAFT_PICK") {
       const { playerId } = data;
 
-      // ❌ No permitir duplicados
+      // ❌ Evitar duplicados
       if (roomObj.state.draft.picks.some(p => p.playerId === playerId)) {
         console.warn(`⛔ Pick duplicado ignorado: ${playerId}`);
         return;
@@ -145,13 +147,15 @@ wss.on("connection", (ws) => {
     }
 
     // ===============================
-    // 🔁 REENVÍO CONTROLADO (CLAVE)
+    // 🔁 REENVÍO CONTROLADO (FINAL)
     // ===============================
     roomObj.clients.forEach(client => {
-      // 🔥 CLAVE: no reenviar al emisor
-      if (client !== ws && client.readyState === WebSocket.OPEN) {
-        client.send(JSON.stringify(data));
-      }
+      if (client.readyState !== WebSocket.OPEN) return;
+
+      // 🔥 SOLO evitar eco en DRAFT_PICK
+      if (type === "DRAFT_PICK" && client === ws) return;
+
+      client.send(JSON.stringify(data));
     });
   });
 
@@ -165,6 +169,7 @@ wss.on("connection", (ws) => {
         roomObj.clients.splice(idx, 1);
         console.log(`❌ Cliente desconectado de sala ${roomId}`);
       }
+
       if (roomObj.clients.length === 0) {
         delete rooms[roomId];
         console.log(`🧹 Sala eliminada: ${roomId}`);

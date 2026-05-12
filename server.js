@@ -51,6 +51,11 @@ wss.on("connection", (ws) => {
           captains: {
             1: { name: null, ready: false },
             2: { name: null, ready: false }
+          },
+          // ✅ ESTADO DE DRAFT (CLAVE)
+          draft: {
+            system: null,
+            picks: []
           }
         }
       };
@@ -122,6 +127,38 @@ wss.on("connection", (ws) => {
         roomObj.state.phase = "TEAMS";
         console.log(`✅ Ambos capitanes listos en sala ${room}`);
       }
+    }
+
+    // ===============================
+    // 🧩 SET_DRAFT_SYSTEM
+    // ===============================
+    if (type === "SET_DRAFT_SYSTEM") {
+      roomObj.state.phase = "DRAFT";
+      roomObj.state.draft.system = data.system;
+      roomObj.state.draft.picks = [];
+      console.log(`🧩 Draft iniciado en sala ${room} con sistema ${data.system}`);
+    }
+
+    // ===============================
+    // 🎯 DRAFT_PICK (ARREGLO CLAVE)
+    // ===============================
+    if (type === "DRAFT_PICK") {
+      const { playerId, targetTeamNum } = data;
+
+      // ❌ Evitar picks duplicados
+      if (roomObj.state.draft.picks.some(p => p.playerId === playerId)) {
+        console.warn(`⛔ Pick duplicado ignorado en sala ${room}: ${playerId}`);
+        return;
+      }
+
+      // ✅ Registrar pick como OFICIAL
+      roomObj.state.draft.picks.push({
+        playerId,
+        targetTeamNum
+      });
+
+      console.log(`✅ Draft pick aceptado en sala ${room}: ${playerId}`);
+      console.log(`📊 Total picks: ${roomObj.state.draft.picks.length}`);
     }
 
     // ===============================

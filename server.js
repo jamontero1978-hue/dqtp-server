@@ -39,8 +39,7 @@ wss.on("connection", (ws) => {
     }
 
     const { room, type } = data;
-
-    if (!room) return;
+    if (!room || !type) return;
 
     // Crear sala si no existe
     if (!rooms[room]) rooms[room] = [];
@@ -74,17 +73,18 @@ wss.on("connection", (ws) => {
 
       ws.send(JSON.stringify({
         type: "ROLE_ASSIGNED",
-        capNum: capNum
+        capNum
       }));
 
-      return;
+      return; // ⬅️ IMPORTANTE: no reenviar JOIN
     }
 
     // ===============================
-    // 🔁 Reenviar mensajes al rival
+    // 🔁 Reenviar mensajes A TODOS
+    // (incluido el emisor)
     // ===============================
     rooms[room].forEach((client) => {
-      if (client !== ws && client.readyState === WebSocket.OPEN) {
+      if (client.readyState === WebSocket.OPEN) {
         client.send(JSON.stringify(data));
       }
     });
@@ -94,11 +94,18 @@ wss.on("connection", (ws) => {
   // ❌ Desconexión
   // ===============================
   ws.on("close", () => {
-    Object.values(rooms).forEach((list) => {
+    Object.entries(rooms).forEach(([roomId, list]) => {
       const index = list.indexOf(ws);
-      if (index !== -1) list.splice(index, 1);
+      if (index !== -1) {
+        list.splice(index, 1);
+        console.log(`❌ Cliente desconectado de sala ${roomId}`);
+      }
+
+      // Limpieza opcional
+      if (list.length === 0) {
+        delete rooms[roomId];
+      }
     });
-    console.log("❌ Cliente desconectado");
   });
 });
 

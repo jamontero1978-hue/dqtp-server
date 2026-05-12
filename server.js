@@ -17,8 +17,16 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocket.Server({ server });
 
 // ===============================
-// 📦 Salas de partidas
-// rooms = { roomId: [ws1, ws2] }
+// 📦 Salas de partidas con ESTADO
+// rooms = {
+//   roomId: {
+//     clients: [ws1, ws2],
+//     state: {
+//       phase: "WAITING" | "SETUP" | "CAPTAINS",
+//       goalsLimit: number | null
+//     }
+//   }
+// }
 // ===============================
 const rooms = {};
 
@@ -30,34 +38,43 @@ wss.on("connection", (ws) => {
 
   ws.on("message", (msg) => {
     let data;
-
     try {
       data = JSON.parse(msg);
-    } catch (e) {
-      console.error("❌ Mensaje no válido:", msg);
+    } catch {
+      console.error("❌ Mensaje inválido");
       return;
     }
 
     const { room, type } = data;
     if (!room || !type) return;
 
-    // Crear sala si no existe
-    if (!rooms[room]) rooms[room] = [];
+    // ===============================
+    // 🏗️ Crear sala si no existe
+    // ===============================
+    if (!rooms[room]) {
+      rooms[room] = {
+        clients: [],
+        state: {
+          phase: "WAITING",
+          goalsLimit: null
+        }
+      };
+      console.log(`🆕 Sala creada: ${room}`);
+    }
+
+    const roomObj = rooms[room];
 
     // Añadir socket a la sala si no está
-    if (!rooms[room].includes(ws)) {
-      rooms[room].push(ws);
+    if (!roomObj.clients.includes(ws)) {
+      roomObj.clients.push(ws);
     }
 
     // ===============================
-    // 🎭 JOIN → asignar rol
+    // 🎭 JOIN → asignar rol + sincronizar estado
     // ===============================
     if (type === "JOIN") {
-      console.log(`👋 JOIN a sala ${room}`);
+      const players = roomObj.clients;
 
-      const players = rooms[room];
-
-      // Máximo 2 jugadores
       if (players.length > 2) {
         ws.send(JSON.stringify({
           type: "ERROR",
@@ -66,24 +83,39 @@ wss.on("connection", (ws) => {
         return;
       }
 
-      // ✅ El primero es Capitán 1, el segundo Capitán 2
       const capNum = players.length === 1 ? 1 : 2;
-
-      console.log(`🎭 Asignando Capitán ${capNum} en sala ${room}`);
+      console.log(`🎭 Capitán ${capNum} asignado en sala ${room}`);
 
       ws.send(JSON.stringify({
         type: "ROLE_ASSIGNED",
         capNum
       }));
 
-      return; // ⬅️ IMPORTANTE: no reenviar JOIN
+      // ✅ SINCRONIZAR ESTADO ACTUAL DE LA PARTIDA
+      ws.send(JSON.stringify({
+        type: "SYNC_STATE",
+        phase: roomObj.state.phase,
+        goalsLimit: roomObj.state.goalsLimit
+      }));
+
+      return; // ⛔ No reenviar JOIN
     }
 
     // ===============================
-    // 🔁 Reenviar mensajes A TODOS
-    // (incluido el emisor)
+    // 🧠 ACTUALIZAR ESTADO DE PARTIDA
     // ===============================
-    rooms[room].forEach((client) => {
+    if (type === "SET_GOALS") {
+      roomObj.state.phase = "CAPTAINS";
+      roomObj.state.goalsLimit = data.value;
+      console.log(`⚽ Sala ${room} → goles = ${data.value}`);
+    }
+
+    // (futuro: aquí puedes añadir TEAMS, DRAFT, GAME, etc.)
+
+    // ===============================
+    // 🔁 REENVIAR A TODOS (INCLUYE EMISOR)
+    // ===============================
+    roomObj.clients.forEach(client => {
       if (client.readyState === WebSocket.OPEN) {
         client.send(JSON.stringify(data));
       }
@@ -94,16 +126,17 @@ wss.on("connection", (ws) => {
   // ❌ Desconexión
   // ===============================
   ws.on("close", () => {
-    Object.entries(rooms).forEach(([roomId, list]) => {
-      const index = list.indexOf(ws);
-      if (index !== -1) {
-        list.splice(index, 1);
-        console.log(`❌ Cliente desconectado de sala ${roomId}`);
+    Object.entries(rooms).forEach(([roomId, roomObj]) => {
+      const idx = roomObj.clients.indexOf(ws);
+      if (idx !== -1) {
+        roomObj.clients.splice(idx, 1);
+        console.log(`❌ Desconectado de sala ${roomId}`);
       }
 
-      // Limpieza opcional
-      if (list.length === 0) {
+      // Limpieza automática de sala vacía
+      if (roomObj.clients.length === 0) {
         delete rooms[roomId];
+        console.log(`🧹 Sala eliminada: ${roomId}`);
       }
     });
   });

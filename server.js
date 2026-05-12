@@ -3,51 +3,108 @@ const WebSocket = require("ws");
 
 const PORT = process.env.PORT || 10000;
 
-// 1️⃣ Servidor HTTP básico (Render lo necesita)
+// ===============================
+// 🌐 Servidor HTTP (Render lo necesita)
+// ===============================
 const server = http.createServer((req, res) => {
   res.writeHead(200);
   res.end("DQTP WebSocket Server");
 });
 
-// 2️⃣ WebSocket SOBRE el servidor HTTP
+// ===============================
+// 🔌 WebSocket sobre HTTP
+// ===============================
 const wss = new WebSocket.Server({ server });
 
-let rooms = {};
+// ===============================
+// 📦 Salas de partidas
+// rooms = { roomId: [ws1, ws2] }
+// ===============================
+const rooms = {};
 
-wss.on("connection", ws => {
+// ===============================
+// 🤝 Conexión de cliente
+// ===============================
+wss.on("connection", (ws) => {
   console.log("✅ Cliente conectado");
 
-  ws.on("message", msg => {
-    const data = JSON.parse(msg);
-    const { room, type } = data;
+  ws.on("message", (msg) => {
+    let data;
 
-    if (!rooms[room]) rooms[room] = [];
-    if (!rooms[room].includes(ws)) rooms[room].push(ws);
-
-    if (type === "JOIN") {
-      console.log(`👋 JOIN a sala ${room}`);
+    try {
+      data = JSON.parse(msg);
+    } catch (e) {
+      console.error("❌ Mensaje no válido:", msg);
       return;
     }
 
-    // 🔁 Reenviar a los demás
-    rooms[room].forEach(client => {
+    const { room, type } = data;
+
+    if (!room) return;
+
+    // Crear sala si no existe
+    if (!rooms[room]) rooms[room] = [];
+
+    // Añadir socket a la sala si no está
+    if (!rooms[room].includes(ws)) {
+      rooms[room].push(ws);
+    }
+
+    // ===============================
+    // 🎭 JOIN → asignar rol
+    // ===============================
+    if (type === "JOIN") {
+      console.log(`👋 JOIN a sala ${room}`);
+
+      const players = rooms[room];
+
+      // Máximo 2 jugadores
+      if (players.length > 2) {
+        ws.send(JSON.stringify({
+          type: "ERROR",
+          message: "La sala está llena"
+        }));
+        return;
+      }
+
+      // ✅ El primero es Capitán 1, el segundo Capitán 2
+      const capNum = players.length === 1 ? 1 : 2;
+
+      console.log(`🎭 Asignando Capitán ${capNum} en sala ${room}`);
+
+      ws.send(JSON.stringify({
+        type: "ROLE_ASSIGNED",
+        capNum: capNum
+      }));
+
+      return;
+    }
+
+    // ===============================
+    // 🔁 Reenviar mensajes al rival
+    // ===============================
+    rooms[room].forEach((client) => {
       if (client !== ws && client.readyState === WebSocket.OPEN) {
         client.send(JSON.stringify(data));
       }
     });
   });
 
+  // ===============================
+  // ❌ Desconexión
+  // ===============================
   ws.on("close", () => {
-    Object.values(rooms).forEach(list => {
-      const i = list.indexOf(ws);
-      if (i !== -1) list.splice(i, 1);
+    Object.values(rooms).forEach((list) => {
+      const index = list.indexOf(ws);
+      if (index !== -1) list.splice(index, 1);
     });
     console.log("❌ Cliente desconectado");
   });
 });
 
-// 3️⃣ INICIAR SERVER CORRECTAMENTE PARA RENDER
+// ===============================
+// 🚀 Arrancar servidor
+// ===============================
 server.listen(PORT, () => {
-  console.log(`🚀 Servidor DQTP activo en puerto ${PORT}`);
+  console.log(`🚀 Servidor DQTP activo en el puerto ${PORT}`);
 });
-``

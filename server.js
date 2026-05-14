@@ -29,6 +29,7 @@ wss.on("connection", (ws) => {
 
   ws.on("message", (msg) => {
     let data;
+
     try {
       data = JSON.parse(msg);
     } catch {
@@ -40,7 +41,7 @@ wss.on("connection", (ws) => {
     if (!room || !type) return;
 
     // ===============================
-    // 🏗️ Crear sala
+    // 🏗️ Crear sala si no existe
     // ===============================
     if (!rooms[room]) {
       rooms[room] = {
@@ -58,12 +59,15 @@ wss.on("connection", (ws) => {
           }
         }
       };
+
       console.log(`🆕 Sala creada: ${room}`);
     }
 
     const roomObj = rooms[room];
 
+    // ===============================
     // Añadir cliente a la sala
+    // ===============================
     if (!roomObj.clients.includes(ws)) {
       roomObj.clients.push(ws);
     }
@@ -104,6 +108,7 @@ wss.on("connection", (ws) => {
     // ===============================
     if (type === "SET_CAPTAIN_NAME") {
       const cap = data.capNum;
+
       roomObj.state.captains[cap].name = data.name;
       roomObj.state.captains[cap].ready = true;
 
@@ -123,6 +128,7 @@ wss.on("connection", (ws) => {
       roomObj.state.phase = "DRAFT";
       roomObj.state.draft.system = data.system;
       roomObj.state.draft.picks = [];
+
       console.log(`🧩 Draft iniciado en sala ${room} (${data.system})`);
     }
 
@@ -130,9 +136,9 @@ wss.on("connection", (ws) => {
     // 🎯 DRAFT PICK
     // ===============================
     if (type === "DRAFT_PICK") {
-      const { playerId } = data;
+      const { playerId, targetTeamNum } = data;
 
-      // ❌ Evitar duplicados
+      // evitar duplicados
       if (roomObj.state.draft.picks.some(p => p.playerId === playerId)) {
         console.warn(`⛔ Pick duplicado ignorado: ${playerId}`);
         return;
@@ -140,22 +146,19 @@ wss.on("connection", (ws) => {
 
       roomObj.state.draft.picks.push({
         playerId,
-        targetTeamNum: data.targetTeamNum
+        targetTeamNum
       });
 
-      console.log(`✅ Draft pick aceptado: ${playerId}`);
+      console.log(`✅ Draft pick: ${playerId}`);
     }
 
     // ===============================
-    // 🔁 REENVÍO CONTROLADO (FINAL)
+    // 🔁 BROADCAST A TODOS (CLAVE)
     // ===============================
     roomObj.clients.forEach(client => {
-      if (client.readyState !== WebSocket.OPEN) return;
-
-      // 🔥 SOLO evitar eco en DRAFT_PICK
-      if (type === "DRAFT_PICK" && client === ws) return;
-
-      client.send(JSON.stringify(data));
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(JSON.stringify(data));
+      }
     });
   });
 
@@ -165,6 +168,7 @@ wss.on("connection", (ws) => {
   ws.on("close", () => {
     Object.entries(rooms).forEach(([roomId, roomObj]) => {
       const idx = roomObj.clients.indexOf(ws);
+
       if (idx !== -1) {
         roomObj.clients.splice(idx, 1);
         console.log(`❌ Cliente desconectado de sala ${roomId}`);
